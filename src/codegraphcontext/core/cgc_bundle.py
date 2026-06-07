@@ -368,18 +368,24 @@ class CGCBundle:
         }
         
         with self.db_manager.get_driver().session() as session:
-            # Get node labels
+            # Get node labels (backend-aware)
+            backend = getattr(self.db_manager, "get_backend_type", lambda: "neo4j")()
             try:
-                result = session.run("CALL db.labels()")
-                labels = []
-                for record in result:
-                    try:
-                        labels.append(record[0])
-                    except (KeyError, TypeError):
-                        if hasattr(record, 'values'):
-                            vals = list(record.values())
-                            if vals:
-                                labels.append(vals[0])
+                if backend in ("kuzudb", "ladybugdb"):
+                    # KuzuDB/LadybugDB: SHOW TABLES not available in ≤ 0.11
+                    result = session.run("MATCH (n) RETURN DISTINCT label(n) AS lbl")
+                    labels = sorted({record[0] for record in result if record[0] is not None})
+                else:
+                    result = session.run("CALL db.labels()")
+                    labels = []
+                    for record in result:
+                        try:
+                            labels.append(record[0])
+                        except (KeyError, TypeError):
+                            if hasattr(record, 'values'):
+                                vals = list(record.values())
+                                if vals:
+                                    labels.append(vals[0])
                 schema["node_labels"] = labels
             except Exception:
                 schema["node_labels"] = []
